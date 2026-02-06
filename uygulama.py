@@ -2,111 +2,107 @@ import streamlit as st
 import json
 import os
 
-# --- VERİTABANI DOSYASI ---
-DB_FILE = "contract_database.json"
+# --- DOSYA YOLLARI ---
+SABLON_FILE = "sozlesme_sablonu.json"
+VERI_FILE = "sozlesme_kayitlari.json"
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+# --- VERİ FONKSİYONLARI ---
+def load_json(file_path, default_value):
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return default_value
 
-def save_db(data):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+def save_json(file_path, data):
+    with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+# --- ŞABLON BAŞLATMA ---
+# Eğer hiç şablon yoksa varsayılan 3 adımı oluşturur
+varsayilan_asama = [
+    {"name": "1. Taslak Hazırlama", "tasks": ["Müşteri bilgilerini gir", "Kapsamı belirle"]},
+    {"name": "2. Hukuki İnceleme", "tasks": ["Risk analizi yap", "Avukat onayı al"]},
+    {"name": "3. İmza Süreci", "tasks": ["E-imza gönder", "Arşivle"]}
+]
+
+sablon = load_json(SABLON_FILE, varsayilan_asama)
+kayitlar = load_json(VERI_FILE, {})
+
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Sözleşme Takip Sistemi", layout="wide")
+st.set_page_config(page_title="Dinamik Sözleşme Yönetimi", layout="wide")
 
-if 'db' not in st.session_state:
-    st.session_state.db = load_db()
-
-# --- SIDEBAR (YÖNETİM PANELİ) ---
+# --- SIDEBAR: ŞABLON VE SÖZLEŞME YÖNETİMİ ---
 with st.sidebar:
-    st.header("🛠️ Yönetim Paneli")
+    st.header("⚙️ Şablonu Düzenle")
+    st.info("Burada yapacağınız değişiklikler tüm yeni sözleşmeleri etkiler.")
     
-    # 1. YENİ SÖZLEŞME EKLE
-    with st.expander("➕ Yeni Sözleşme Tanımla", expanded=True):
-        new_name = st.text_input("Sözleşme Adı")
-        if st.button("Sözleşmeyi Kaydet"):
-            if new_name and new_name not in st.session_state.db:
-                st.session_state.db[new_name] = {"stages": [], "completed_tasks": []}
-                save_db(st.session_state.db)
-                st.success(f"{new_name} oluşturuldu!")
+    with st.expander("➕ Yeni Aşama/Görev Ekle"):
+        yeni_asama_adi = st.text_input("Aşama Adı")
+        yeni_gorevler = st.text_area("Görevler (Her satıra bir tane)").split('\n')
+        
+        if st.button("Şablona Kaydet"):
+            temiz_gorevler = [t.strip() for t in yeni_gorevler if t.strip()]
+            if yeni_asama_adi and temiz_gorevler:
+                sablon.append({"name": yeni_asama_adi, "tasks": temiz_gorevler})
+                save_json(SABLON_FILE, sablon)
+                st.success("Şablon güncellendi!")
                 st.rerun()
 
+    if st.button("♻️ Şablonu Sıfırla (Varsayılana Dön)"):
+        save_json(SABLON_FILE, varsayilan_asama)
+        st.rerun()
+
     st.divider()
-
-    # 2. SÖZLEŞME SEÇ
-    all_contracts = list(st.session_state.db.keys())
-    selected_contract = st.selectbox("Düzenlenecek Sözleşme", options=all_contracts if all_contracts else ["Sözleşme Yok"])
-
-    # 3. SEÇİLİ SÖZLEŞMEYE AŞAMA EKLE
-    if selected_contract != "Sözleşme Yok":
-        st.divider()
-        st.subheader(f"⚙️ {selected_contract} Ayarları")
-        with st.expander("📏 Yeni Aşama/Görev Ekle"):
-            stage_name = st.text_input("Aşama Başlığı (Örn: Taslak)")
-            tasks_text = st.text_area("Görevler (Her satıra bir tane)")
-            if st.button("Aşamayı Ekle"):
-                if stage_name and tasks_text:
-                    new_stage = {
-                        "name": stage_name,
-                        "tasks": [t.strip() for t in tasks_text.split("\n") if t.strip()]
-                    }
-                    st.session_state.db[selected_contract]["stages"].append(new_stage)
-                    save_db(st.session_state.db)
-                    st.rerun()
-        
-        if st.button("🗑️ Sözleşmeyi Tamamen Sil"):
-            del st.session_state.db[selected_contract]
-            save_db(st.session_state.db)
+    st.header("📄 Sözleşmeler")
+    yeni_sozlesme_adi = st.text_input("Yeni Sözleşme Başlat")
+    if st.button("Sözleşme Oluştur"):
+        if yeni_sozlesme_adi and yeni_sozlesme_adi not in kayitlar:
+            # Yeni sözleşmeyi O ANKİ ŞABLON ile oluşturur
+            kayitlar[yeni_sozlesme_adi] = {
+                "asama_durumu": 0,
+                "tamamlanan_gorevler": [],
+                "mevcut_sablon": sablon # O anki şablon kopyalanır
+            }
+            save_json(VERI_FILE, kayitlar)
             st.rerun()
 
-# --- ANA EKRAN (TAKİP ALANI) ---
-if selected_contract == "Sözleşme Yok":
-    st.info("Sol taraftaki panelden bir sözleşme oluşturun ve aşamalarını ekleyin.")
-else:
-    st.title(f"📑 {selected_contract}")
-    data = st.session_state.db[selected_contract]
+    secilen_is = st.selectbox("Takip Edilecek Sözleşme", options=list(kayitlar.keys()) if kayitlar else ["Yok"])
+
+# --- ANA EKRAN ---
+if secilen_is != "Yok":
+    st.title(f"📋 {secilen_is}")
+    data = kayitlar[secilen_is]
+    aktif_sablon = data["mevcut_sablon"]
     
-    if not data["stages"]:
-        st.warning("Bu sözleşme için henüz bir aşama eklenmemiş. Sol panelden ekleme yapın.")
-    else:
-        # İlerleme Hesaplama
-        total_tasks = sum(len(s["tasks"]) for s in data["stages"])
-        done_tasks = len(data["completed_tasks"])
-        progress = done_tasks / total_tasks if total_tasks > 0 else 0
-        st.progress(progress)
-        st.write(f"Toplam İlerleme: %{int(progress*100)}")
+    # İlerleme Çubuğu
+    toplam_gorev = sum(len(a["tasks"]) for a in aktif_sablon)
+    yapilan_gorev = len(data["tamamlanan_gorevler"])
+    st.progress(yapilan_gorev / toplam_gorev if toplam_gorev > 0 else 0)
 
-        # AŞAMALARI GÖSTER (SIRALI KİLİT SİSTEMİ)
-        for i, stage in enumerate(data["stages"]):
-            # Önceki aşamadaki tüm görevler bitti mi kontrol et
-            prev_stage_done = True
-            if i > 0:
-                prev_stage = data["stages"][i-1]
-                prev_stage_done = all(t in data["completed_tasks"] for t in prev_stage["tasks"])
+    # SIRALI AKIŞ MANTIĞI
+    for idx, asama in enumerate(aktif_sablon):
+        # Kilit mekanizması: Önceki aşama bitmeden sonraki görünmez
+        if idx > 0:
+            onceki_asama_gorevleri = aktif_sablon[idx-1]["tasks"]
+            if not all(g in data["tamamlanan_gorevler"] for g in onceki_asama_gorevleri):
+                st.warning(f"🔒 '{aktif_sablon[idx-1]['name']}' tamamlanmadan bu aşama açılmaz.")
+                break
 
-            if not prev_stage_done:
-                st.lockup_msg = st.warning(f"🔒 '{data['stages'][i-1]['name']}' aşaması tamamlanmadan bu alan açılmaz.")
-                break # Diğer aşamaları gösterme
+        with st.expander(f"🔹 {asama['name']}", expanded=True):
+            for gorev in asama["tasks"]:
+                gorev_key = f"{secilen_is}_{idx}_{gorev}"
+                is_checked = gorev in data["tamamlanan_gorevler"]
+                
+                if st.checkbox(gorev, value=is_checked, key=gorev_key):
+                    if gorev not in data["tamamlanan_gorevler"]:
+                        data["tamamlanan_gorevler"].append(gorev)
+                        save_json(VERI_FILE, kayitlar)
+                        st.rerun()
+                else:
+                    if gorev in data["tamamlanan_gorevler"]:
+                        data["tamamlanan_gorevler"].remove(gorev)
+                        save_json(VERI_FILE, kayitlar)
+                        st.rerun()
 
-            with st.expander(f"Aşama {i+1}: {stage['name']}", expanded=True):
-                for task in stage["tasks"]:
-                    is_done = task in data["completed_tasks"]
-                    
-                    # Checkbox
-                    if st.checkbox(task, value=is_done, key=f"{selected_contract}_{i}_{task}"):
-                        if task not in data["completed_tasks"]:
-                            data["completed_tasks"].append(task)
-                            save_db(st.session_state.db)
-                            st.rerun()
-                    else:
-                        if task in data["completed_tasks"]:
-                            data["completed_tasks"].remove(task)
-                            save_db(st.session_state.db)
-                            st.rerun()
+else:
+    st.info("Lütfen sol panelden bir sözleşme oluşturun.")
